@@ -1,30 +1,23 @@
 from googleapiclient.discovery import build
-import requests
-import pandas as pd
 import pymongo
 import datetime
-import copy
 import mysql.connector
-
 current_time = datetime.datetime.now()
 max_comments = 2
 comments={}
 data=[]
 count = 0
 new= {}
-videos = {}
-comm= {}
 
 #---------------------------------------------API---------------------------------------------------
 
 api_service_name = 'youtube'
 api_version = 'v3'
-youtube = build(api_service_name,api_version,developerKey='AIzaSyDIV-EZW4RJcUw7bH33g3096uWsjJX-2Ag')
+youtube = build(api_service_name,api_version,developerKey='AIzaSyAhuXky7gqy86lvokdcdXgZWvyvMVlayoY')
 
 #---------------------------------------------Channel-id--------------------------------------------
 
-channel_id= ['UCvEKHATlVq84hm1jduTYm8g','UCxXr3E2YkqLXri2sDJ3v-5Q']
-
+channel_id= ['UCBCrz2N9JVA0He1vYcBac_g','UCvEKHATlVq84hm1jduTYm8g']
 #---------------------------------------------Function to get Channel Details-----------------------
 
 def channel_details(youtube, channel_id):
@@ -66,24 +59,34 @@ def get_video_comments(youtube, video_id, max_comments):
         textFormat="plainText",
         videoId=video_id)
     response = request.execute()
-    for item in response['items']:
-        comment_id = item["id"]
-        if comment_id in comment_ids:
-            continue  # Skip this comment if it has already been added
-        comment_snippet = item['snippet']['topLevelComment']['snippet']
-        author_name = comment_snippet['authorDisplayName']
-        published_time = comment_snippet['publishedAt']
-        comment_text = comment_snippet['textDisplay']
+    if 'items' not in response:
+        # No comments found, assign 0 to all fields
         comment_details = {
-            'id': comment_id,
-            'author_name': author_name,
-            'published_time': published_time,
-            'comment_text': comment_text
+            'id': 0,
+            'author_name': 0,
+            'published_time': 0,
+            'comment_text': 0
         }
-        key = f'Comment_Id_{ind}'
-        comments[key] = comment_details
-        comment_ids.add(comment_id)
-        ind += 1
+        comments['Comment_Id_1'] = comment_details
+    else:
+        for item in response['items']:
+            comment_id = item["id"]
+            comment_snippet = item['snippet']['topLevelComment']['snippet']
+            author_name = comment_snippet['authorDisplayName']
+            published_time = comment_snippet['publishedAt']
+            comment_text = comment_snippet['textDisplay']
+            if comment_id in comment_ids:
+                continue  # Skip this comment if it has already been added
+            comment_details = {
+                'id': comment_id,
+                'author_name': author_name,
+                'published_time': published_time,
+                'comment_text': comment_text
+            }
+            key = f'Comment_Id_{ind}'
+            comments[key] = comment_details
+            comment_ids.add(comment_id)
+            ind += 1
     return comments
 
 
@@ -116,7 +119,7 @@ def upload_to_DB():
 
 #-----------------------------------------------------------SQL----------------------------------------------
 
-def SQL_Channel(channel):
+def DB_Create():
     conn = mysql.connector.connect(
         host="localhost",
         user="srini",
@@ -129,6 +132,21 @@ def SQL_Channel(channel):
     cursor.execute(sql)
     result = cursor.fetchone()
     if result:
+        print()
+    else:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="srini",
+            password="password"
+        )
+        # Create a cursor object
+        cursor = conn.cursor()
+        sql = "CREATE DATABASE YDH"
+        cursor.execute(sql)
+
+
+#-----------------------------------------------------------DB Creation MYSQL--------------------------------
+def SQL_Channel(channel):
         conn = mysql.connector.connect(
             host="localhost",
             user="srini",
@@ -150,40 +168,6 @@ def SQL_Channel(channel):
         values = (chnnel_id, chnnel_name, chnnel_video_count,chnnel_sub,chnnel_view_count,chnnel_descr,chnnel_playlist_id)
         cursor.execute(sql, values)
         conn.commit()
-
-    else:
-        conn = mysql.connector.connect(
-            host="localhost",
-            user="srini",
-            password="password"
-        )
-        # Create a cursor object
-        cursor = conn.cursor()
-        sql = "CREATE DATABASE YDH"
-        cursor.execute(sql)
-        conn = mysql.connector.connect(
-            host="localhost",
-            user="srini",
-            password="password",
-            database="YDH"
-        )
-        cursor = conn.cursor()
-        cursor.execute("CREATE TABLE YoutubeChannel (channel_id  VARCHAR(255) PRIMARY KEY ,channel_name VARCHAR(255),channel_video_count INTEGER,channel_sub INTEGER, channel_view_count INTEGER, channel_description TEXT,channel_playlist_id VARCHAR(255))")
-        chnnel_id = channel['channel_id']
-        chnnel_name = channel['channel_name']
-        chnnel_video_count = channel['channel_video_count']
-        chnnel_sub = channel['subscriber']
-        chnnel_view_count = channel['channel_view_count']
-        chnnel_descr = channel['channel_descr']
-        chnnel_playlist_id = channel['playlist_id']
-        # SQL INSERT statement
-        sql = """INSERT INTO YoutubeChannel (channel_id, channel_name, channel_video_count, channel_sub, channel_view_count, channel_description,channel_playlist_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)"""
-        values = (chnnel_id, chnnel_name, chnnel_video_count,chnnel_sub,chnnel_view_count,chnnel_descr,chnnel_playlist_id)
-        cursor.execute(sql, values)
-        conn.commit()
-    cursor.close()
-    conn.close()
 
 
 def playlist(channel):
@@ -260,63 +244,6 @@ def Comments(comments):
 
 #----------------------------------------------------------Calling Created Function------------------------------------------------------------------------------
 
-
-for i in channel_id:
-    response1 = channel_details(youtube, i)
-    channel_name = response1['items'][0]['snippet']['title']
-    channel_video_count = response1['items'][0]['statistics']['videoCount']
-    channel_sub = response1['items'][0]['statistics']['subscriberCount']
-    channel_view_count = response1['items'][0]['statistics']['viewCount']
-    channel_descr = response1['items'][0]['snippet']['description']
-    channel_playlist_id = response1['items'][0]['contentDetails']['relatedPlaylists']['uploads']
-
-    channel = {'channel_id':i,
-               'channel_name':channel_name,
-               'channel_video_count':channel_video_count,
-               'subscriber':channel_sub,
-               'channel_view_count':channel_view_count,
-               'channel_descr':channel_descr,
-               'playlist_id':channel_playlist_id,}
-    playlist_items = Playlist_Video(youtube, channel_playlist_id)
-    video_id = []
-    for item in playlist_items:
-        video_id.append(item['contentDetails']['videoId'])
-    for v in video_id:
-        video = Video_Details(youtube, v)
-        get_video_comments(youtube, v, max_comments)
-        video_title = video['snippet']['title']
-        video_like_count = video['statistics']['likeCount']
-        video_dislike_count = video['statistics'].get('dislikeCount', 0)
-        video_comment_count = video['statistics']['commentCount']
-        video_tags = video['snippet'].get('tags', [])[:2]
-        video_descr = video['snippet']['description']
-        video_published = video['snippet']['publishedAt']
-        video_vc = video['statistics']['viewCount']
-        video_duration = video['contentDetails']['duration']
-        videos = {
-            "Video_Id": v,
-            "Video_Name": video_title,
-            "Video_Description": video_descr,
-            "Tags": ', '.join(video_tags),
-            "PublishedAt": video_published,
-            "View_Count": video_vc,
-            "Like_Count": video_like_count,
-            "Dislike_Count": video_dislike_count,
-            "Comment_Count": video_comment_count,
-            "Video_Duration": video_duration,
-            'comments': comments
-        }
-
-        data.append(videos)
-        count += 1
-        new = {'channel': channel, 'video': data}
-
-    #upload_to_DB()
-    #SQL_Channel(channel)
-    #playlist(channel)
-    Comments(comments)
-        #for item in data:
-        #    Video(item)
 
 
 
