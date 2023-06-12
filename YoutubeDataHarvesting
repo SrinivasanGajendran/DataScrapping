@@ -1,24 +1,11 @@
-from googleapiclient.discovery import build
 import pymongo
 import datetime
 import mysql.connector
+import regex as re
 current_time = datetime.datetime.now()
-max_comments = 2
 comments={}
-data=[]
-count = 0
-new= {}
 
-#---------------------------------------------API---------------------------------------------------
-
-api_service_name = 'youtube'
-api_version = 'v3'
-youtube = build(api_service_name,api_version,developerKey='AIzaSyAhuXky7gqy86lvokdcdXgZWvyvMVlayoY')
-
-#---------------------------------------------Channel-id--------------------------------------------
-
-channel_id= ['UCBCrz2N9JVA0He1vYcBac_g','UCvEKHATlVq84hm1jduTYm8g']
-#---------------------------------------------Function to get Channel Details-----------------------
+#---------------------------------------------Function To Get Channel Details-------------------------------------------
 
 def channel_details(youtube, channel_id):
     request=youtube.channels().list(
@@ -27,7 +14,7 @@ def channel_details(youtube, channel_id):
     response=request.execute()
     return response
 
-#---------------------------------------------Function to get Playlist id--------------------------
+#---------------------------------------------Function to get Playlist id-----------------------------------------------
 
 def Playlist_Video(youtube, playlist_id):
     next_page = None
@@ -42,55 +29,25 @@ def Playlist_Video(youtube, playlist_id):
             break
     return new_list
 
-#---------------------------------------------Function to get video Details--------------------------
+#---------------------------------------------Function to get video Details---------------------------------------------
 
 def Video_Details(youtube, video_id):
     request = youtube.videos().list(part="snippet,contentDetails,statistics",id=video_id)
     response = request.execute()
     return response['items'][0]
 
-#---------------------------------------------Function to get Comments------------------------------
+#---------------------------------------------Function to get Comments--------------------------------------------------
+
 def get_video_comments(youtube, video_id, max_comments):
-    ind = 1
-    comment_ids = set()
     request = youtube.commentThreads().list(
         part='snippet',
         maxResults=max_comments,
         textFormat="plainText",
         videoId=video_id)
     response = request.execute()
-    if 'items' not in response:
-        # No comments found, assign 0 to all fields
-        comment_details = {
-            'id': 0,
-            'author_name': 0,
-            'published_time': 0,
-            'comment_text': 0
-        }
-        comments['Comment_Id_1'] = comment_details
-    else:
-        for item in response['items']:
-            comment_id = item["id"]
-            comment_snippet = item['snippet']['topLevelComment']['snippet']
-            author_name = comment_snippet['authorDisplayName']
-            published_time = comment_snippet['publishedAt']
-            comment_text = comment_snippet['textDisplay']
-            if comment_id in comment_ids:
-                continue  # Skip this comment if it has already been added
-            comment_details = {
-                'id': comment_id,
-                'author_name': author_name,
-                'published_time': published_time,
-                'comment_text': comment_text
-            }
-            key = f'Comment_Id_{ind}'
-            comments[key] = comment_details
-            comment_ids.add(comment_id)
-            ind += 1
-    return comments
+    return response['items']
 
-
-#---------------------------------------------Checing for the existence of MongoDB--------------------------
+#---------------------------------------------Checing for the existence of MongoDB--------------------------------------
 
 def checkExistence_DB(DB_NAME, client):
     """It verifies the existence of DB"""
@@ -101,23 +58,23 @@ def checkExistence_DB(DB_NAME, client):
     #print(f"DB: '{DB_NAME}' not yet present present in the DB So Creating A DB")
     return False
 
-#--------------------------------------------------Uploading into MongoDB-----------------------------------
+#--------------------------------------------------Uploading into MongoDB-----------------------------------------------
 
-def upload_to_DB():
+def upload_to_DB(channel_name,new):
     myclient = pymongo.MongoClient("mongodb://localhost:27017/")
     if checkExistence_DB(DB_NAME="mydatabase", client=myclient) == True:
         db = myclient["mydatabase"]
-        COLLECTION_NAME = channel_playlist_id
+        COLLECTION_NAME = channel_name
         collection = db[COLLECTION_NAME+"_"+str(current_time)]
         collection.insert_one(new)
     else:
         db = myclient["mydatabase"]
-        COLLECTION_NAME = channel_playlist_id
+        COLLECTION_NAME = channel_name
         collection = db[COLLECTION_NAME + "_" + str(current_time)]
         collection.insert_one(new)
     #print(f'Created A DB Of Name {collection}')
 
-#-----------------------------------------------------------SQL----------------------------------------------
+#-----------------------------------------------------------SQL---------------------------------------------------------
 
 def DB_Create():
     conn = mysql.connector.connect(
@@ -145,7 +102,7 @@ def DB_Create():
         cursor.execute(sql)
 
 
-#-----------------------------------------------------------DB Creation MYSQL--------------------------------
+#-------------------------------------------------DB Creation MYSQL-----------------------------------------------------
 def SQL_Channel(channel):
         conn = mysql.connector.connect(
             host="localhost",
@@ -169,6 +126,7 @@ def SQL_Channel(channel):
         cursor.execute(sql, values)
         conn.commit()
 
+#------------------------------------------------------DB For Playlist--------------------------------------------------
 
 def playlist(channel):
     conn = mysql.connector.connect(
@@ -189,7 +147,9 @@ def playlist(channel):
     cursor.close()
     conn.close()
 
-def Video(item):
+#--------------------------------------------DB For Video---------------------------------------------------------------
+
+def Video(item,channel_playlist_id):
     conn = mysql.connector.connect(
         host="localhost",
         user="srini",
@@ -197,8 +157,9 @@ def Video(item):
         database="YDH"
     )
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS Videos (Video_Id  VARCHAR(255) PRIMARY KEY ,Video_Name VARCHAR(255),Video_Description VARCHAR(255),Tags VARCHAR(255) ,PublishedAt VARCHAR(255), View_Count INTEGER, Like_Count INTEGER, Dislike_Count INTEGER, Comment_Count INTEGER, Video_Duration VARCHAR(255))")
+    cursor.execute("CREATE TABLE IF NOT EXISTS Videos (Video_Id VARCHAR(255) PRIMARY KEY ,Playlist_Id VARCHAR(255),Video_Name VARCHAR(255),Video_Description VARCHAR(255),Tags VARCHAR(255) ,PublishedAt VARCHAR(255), View_Count INTEGER, Like_Count INTEGER, Dislike_Count INTEGER, Comment_Count INTEGER, Video_Duration VARCHAR(255), FOREIGN KEY (Playlist_Id) REFERENCES playlist(channel_playlist_id))")
     Video_Id = item["Video_Id"]
+    playlist_id = channel_playlist_id
     Video_Name = item['Video_Name']
     Video_Description = item['Video_Description'][:255]
     Tags =  item['Tags']
@@ -208,15 +169,17 @@ def Video(item):
     Dislike_Count = item['Dislike_Count']
     Comment_Count = item['Comment_Count']
     Video_Duration = item['Video_Duration']
-    sql = """INSERT INTO Videos (Video_Id, Video_Name, Video_Description, Tags, PublishedAt, View_Count, Like_Count, Dislike_Count, Comment_Count, Video_Duration)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-    values = (Video_Id, Video_Name, Video_Description, Tags, PublishedAt, View_Count, Like_Count, Dislike_Count, Comment_Count, Video_Duration)
+    sql = """INSERT INTO Videos (Video_Id, Playlist_Id ,Video_Name, Video_Description, Tags, PublishedAt, View_Count, Like_Count, Dislike_Count, Comment_Count, Video_Duration)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+    values = (Video_Id, playlist_id,Video_Name, Video_Description, Tags, PublishedAt, View_Count, Like_Count, Dislike_Count, Comment_Count, Video_Duration)
     cursor.execute(sql, values)
     conn.commit()
     cursor.close()
     conn.close()
 
-def Comments(comments):
+#------------------------------------------------------DB For Comments--------------------------------------------------
+
+def Comments(co):
     # Get the 'comments' dictionary from the item
     conn = mysql.connector.connect(
         host="localhost",
@@ -225,26 +188,37 @@ def Comments(comments):
         database="YDH"
     )
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS Comments (comment_id VARCHAR(255) PRIMARY KEY, video_id VARCHAR(255), Comment_Text TEXT, Author_Name VARCHAR(255), Published_Time VARCHAR(255))")
-    for comment_id, comment_data in comments.items():
-        comment_Id = comment_data['id']
-        comment_text = comment_data['comment_text']
+    cursor.execute("CREATE TABLE IF NOT EXISTS Comments(comment_id VARCHAR(255) PRIMARY KEY, video_id VARCHAR(255), Comment_Text TEXT, Author_Name VARCHAR(255), Published_Time VARCHAR(255), FOREIGN KEY (video_id) REFERENCES Videos (Video_Id))")
+    for key, comment_data in co.items():
+        comment_id = comment_data['id']
+        video_id = comment_data['video_Id']
         author_name = comment_data['author_name']
         published_time = comment_data['published_time']
+        comment_text = comment_data['comment_text']
+        # Construct the SQL query
+        sql = "INSERT INTO Comments (comment_id, video_id ,author_name, published_time, comment_text) VALUES (%s ,%s, %s, %s, %s)"
+        values = (comment_id, video_id, author_name, published_time, comment_text)
 
-        sql = """INSERT INTO Comments (comment_id, Comment_Text, Author_Name, Published_Time)
-                    VALUES (%s, %s, %s, %s)"""
-        values = (comment_Id, comment_text, author_name, published_time)
+        # Execute the query
         cursor.execute(sql, values)
     conn.commit()
     cursor.close()
     conn.close()
 
+#-----------------------------------------------------Converting the duration-------------------------------------------
+
+def convert_duration(duration):
+    regex = r'PT(\d+H)?(\d+M)?(\d+S)?'
+    match = re.match(regex, duration)
+    if not match:
+        return '00:00:00'
+    hours, minutes, seconds = match.groups()
+    hours = int(hours[:-1]) if hours else 0
+    minutes = int(minutes[:-1]) if minutes else 0
+    seconds = int(seconds[:-1]) if seconds else 0
+    total = hours * 3600 + minutes * 60 + seconds
+    return '{:02d}:{:02d}:{:02d}'.format(int(total / 3600), int((total % 3600) / 60), int(total % 60))
 
 
-#----------------------------------------------------------Calling Created Function------------------------------------------------------------------------------
 
-
-
-
-
+#-----------------------------------------------------------------------------------------------------------------------
