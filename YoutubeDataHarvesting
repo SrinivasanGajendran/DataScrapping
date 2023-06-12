@@ -2,6 +2,7 @@ import pymongo
 import datetime
 import mysql.connector
 import regex as re
+from googleapiclient.errors import HttpError
 current_time = datetime.datetime.now()
 comments={}
 
@@ -39,13 +40,17 @@ def Video_Details(youtube, video_id):
 #---------------------------------------------Function to get Comments--------------------------------------------------
 
 def get_video_comments(youtube, video_id, max_comments):
-    request = youtube.commentThreads().list(
-        part='snippet',
-        maxResults=max_comments,
-        textFormat="plainText",
-        videoId=video_id)
-    response = request.execute()
-    return response['items']
+    try:
+        request = youtube.commentThreads().list(
+            part='snippet',
+            maxResults=max_comments,
+            textFormat="plainText",
+            videoId=video_id)
+        response = request.execute()
+        return response['items']
+    except HttpError as e:
+        if e.resp.status == 403 and 'commentsDisabled' in str(e):
+            return None
 
 #---------------------------------------------Checing for the existence of MongoDB--------------------------------------
 
