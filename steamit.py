@@ -6,14 +6,17 @@ import mysql.connector
 import pymongo
 import pandas as pd
 from googleapiclient.discovery import build
+from PIL import Image
 
 
 st.set_page_config(page_title='YTDH', page_icon=":tada", layout='wide')
 
 api_service_name = 'youtube'
 api_version = 'v3'
-youtube = build(api_service_name,api_version,developerKey='AIzaSyAq60ZlRPrCkyMBzGAX8P9A8DkFjs9DkwU')
+youtube = build(api_service_name,api_version,developerKey='AIzaSyC2-Wnv190Orjkcj987f73I8nGzE27h7y8')
 
+image= Image.open('D:/python/YoutubeDataHarvesting/Logo.jpg')
+st.image(image,width=300)
 st.title('YoutubeDataHarvesting')
 
 SELECT = option_menu(
@@ -78,28 +81,30 @@ elif SELECT == 'Process':
                 for v in video_id:
                     ind = 1
                     comments = {}
-                    for item in main.get_video_comments(youtube, v, max_comments):
-                        comment_id = item["id"]
-                        vid_id = v
-                        comment_snippet = item['snippet']['topLevelComment']['snippet']
-                        author_name = comment_snippet['authorDisplayName']
-                        published_time = comment_snippet['publishedAt']
-                        comment_text = comment_snippet['textDisplay']
-                        comment_details = {
-                            'id': comment_id,
-                            'video_Id':vid_id,
-                            'author_name': author_name,
-                            'published_time': published_time,
-                            'comment_text': comment_text
-                        }
-                        key = f'Comment_Id_{ind}'
-                        comments[key] = comment_details
-                        ind += 1
+                    video_comments = main.get_video_comments(youtube, v, max_comments)
+                    if video_comments is not None:
+                        for item in video_comments:
+                                comment_id = item["id"]
+                                vid_id = v
+                                comment_snippet = item['snippet']['topLevelComment']['snippet']
+                                author_name = comment_snippet['authorDisplayName']
+                                published_time = comment_snippet['publishedAt']
+                                comment_text = comment_snippet['textDisplay']
+                                comment_details = {
+                                    'id': comment_id,
+                                    'video_Id': vid_id,
+                                    'author_name': author_name,
+                                    'published_time': published_time,
+                                    'comment_text': comment_text
+                                }
+                                key = f'Comment_Id_{ind}'
+                                comments[key] = comment_details
+                                ind += 1
                     video = main.Video_Details(youtube, v)
                     video_title = video['snippet']['title']
                     video_like_count = video['statistics']['likeCount']
                     video_dislike_count = video['statistics'].get('dislikeCount', 0)
-                    video_comment_count = video['statistics']['commentCount']
+                    video_comment_count = video['statistics'].get('CommentCount', 0)
                     video_tags = video['snippet'].get('tags', [])[:2]
                     video_descr = video['snippet']['description']
                     video_published = video['snippet']['publishedAt']
